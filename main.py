@@ -1,4 +1,3 @@
-
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
@@ -6,28 +5,29 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import yt_dlp
 from googleapiclient.discovery import build
+import threading
 
 from config import SPOTIPY_CLIENT_ID, SPOTIPY_CLIENT_SECRET, SPOTIPY_REDIRECT_URI, YOUTUBE_API_KEY
 
-#create tkinker window
+#tkinter window
 root = tk.Tk()
 root.title("Spotify Playlist Downloader")
 root.geometry("800x800")
 root.config(bg="#e6f2ff")
 
-font_name = "Copperplate"
+#font_name = "Futura"
+font_name = "Gotu"
 font_size = 25
 
-titleLabel = tk.Label(root, text= "Spotify Playlist Downloader", font=(font_name, '40', 'bold', 'underline'), bg="#e6f2ff", fg="#003366")
+titleLabel = tk.Label(root, text="Spotify Playlist Downloader", font=(font_name, '40', 'bold', 'underline'), bg="#e6f2ff", fg="#003366")
 titleLabel.pack(pady=10)
 
-#spotify playlist input
 urlInputLabel = tk.Label(root, text="Spotify Playlist URL/ID:", font=(font_name, font_size, 'bold'), bg="#e6f2ff", fg="#003366")
 urlInputLabel.pack(pady=10)
 url_entry = tk.Entry(root, width=50, font=(font_name, font_size))
 url_entry.pack(pady=10)
 
-#selecting directory 
+#selecting directory
 def browse_directory():
     directory = filedialog.askdirectory()
     if directory:
@@ -47,12 +47,41 @@ subdirectoryLabel.pack(pady=10)
 subdir_entry = tk.Entry(root, width=50, font=(font_name, font_size))
 subdir_entry.pack(pady=10)
 
-download_button = tk.Button(root, text="Start Download", command=lambda: start_download(url_entry.get(), directory_entry.get(), subdir_entry.get()), font=(font_name, font_size, 'bold'), bg="#0055a5", fg="#003366")
+download_button = tk.Button(root, text="Start Download", command=lambda: start_download_thread(url_entry.get(), directory_entry.get(), subdir_entry.get()), font=(font_name, font_size, 'bold'), bg="#ff6600", fg="#003366")
 download_button.pack(pady=20)
+
+downloading_label = tk.Label(root, text="", font=(font_name, font_size, 'bold'), bg="#e6f2ff", fg="#003366")
+downloading_label.pack(pady=10)
+
+progress_label = tk.Label(root, text="", font=(font_name, font_size, 'bold'), bg="#e6f2ff", fg="#003366")
+progress_label.pack(pady=10)
+
+reset_button = tk.Button(root, text="Download Another Playlist", command=lambda: clear_inputs_and_hide(), font=(font_name, int(font_size * 0.8)), bg="#ff6600", fg="#003366", padx=10, pady=5)
+
+def clear_inputs_and_hide():
+    clear_inputs()
+    reset_button.pack_forget()
+    progress_label.config(text="")
+    downloading_label.config(text="")
+
+def clear_inputs():
+    url_entry.delete(0, tk.END)
+    directory_entry.delete(0, tk.END)
+    subdir_entry.delete(0, tk.END)
+
+# downloading in separate thread
+def start_download_thread(playlist_url_or_id, save_directory, subdirectory_name):
+
+    downloading_label.config(text="Downloading...")
+    root.update_idletasks() 
+    
+    download_thread = threading.Thread(target=start_download, args=(playlist_url_or_id, save_directory, subdirectory_name))
+    download_thread.start()
 
 def start_download(playlist_url_or_id, save_directory, subdirectory_name):
     if not playlist_url_or_id or not save_directory:
         messagebox.showerror("Error", "Please enter Spotify playlist URL/ID and the save directory to start downloading!")
+        downloading_label.config(text="")
         return
 
     output_dir = os.path.join(save_directory, "Downloaded_MP3s")
@@ -69,21 +98,28 @@ def start_download(playlist_url_or_id, save_directory, subdirectory_name):
     else:
         playlist_id = playlist_url_or_id
 
-    #spotify authentication 
+    #spotify authentication
     sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=SPOTIPY_CLIENT_ID,
                                                    client_secret=SPOTIPY_CLIENT_SECRET,
                                                    redirect_uri=SPOTIPY_REDIRECT_URI,
                                                    scope='playlist-read-private user-library-read'))
 
-    #getting playlist songs
     tracks = get_playlist_tracks(sp, playlist_id)
+    total_tracks = len(tracks)
 
-    #downloading tracks 
-    for track in tracks:
+    #downloading the tracks 
+    for index, track in enumerate(tracks):
         youtube_url = search_youtube(track)
         download_mp3(youtube_url, track, output_dir)
-    
+        directory_text = f"{save_directory}/Downloaded_MP3s"
+        if subdirectory_name:
+            directory_text += f"/{subdirectory_name}"
+        progress_label.config(text=f"{index + 1} song(s) downloaded to {directory_text}")
+        root.update_idletasks()
+
+    downloading_label.config(text="")
     messagebox.showinfo("Success", "Download Complete!")
+    reset_button.pack(pady=10)
 
 def get_playlist_tracks(sp, playlist_id):
     results = sp.playlist_tracks(playlist_id)
